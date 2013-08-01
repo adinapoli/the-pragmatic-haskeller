@@ -16,6 +16,7 @@ import Snap.Snaplet.MongoDB
 import Snap.Snaplet.Heist
 import qualified Heist.Interpreted as I
 import qualified Data.ByteString.Lazy as BL
+import qualified Snap.Extras as Extras
 import Debug.Trace (traceIO)
 
 
@@ -64,15 +65,34 @@ storeRecipe recipe = case parseRecipe recipe of
 routes :: [(ByteString, AppHandler ())]
 routes = basicRoutes
 
-withRestAuth :: Handler b v a -> Handler b v a
-withRestAuth hdlr = do
-  request <- getRequest
-  liftIO $ traceIO . show $ request
-  hdlr
+type StatusCode = Int
+
+data AuthenticationRejection = AuthenticationRejection
+    { rejectionCode :: StatusCode
+    , rejectionMessage :: ByteString } deriving (Show)
+
+
+tokenAuthentication :: Handler b v a -> Either AuthenticationRejection (Handler b v a)
+tokenAuthentication hdlr = return hdlr
+
+
+alwaysFailAuthenticator :: Handler b v a -> Either AuthenticationRejection (Handler b v a)
+alwaysFailAuthenticator hdlr = Left (AuthenticationRejection 404 "You shall not pass!")
+
+
+-------------------------------------------------------------------------------
+-- Restful Authenticator, inspired to [Spray](http://spray.io/)
+withRestAuth :: (Handler b v a -> Either AuthenticationRejection (Handler b v a))
+                -> Handler b v a
+                -> Handler b v a
+withRestAuth authFunction hdlr = either
+    (\rej -> Extras.finishEarly (rejectionCode rej) (rejectionMessage rej))
+    id (authFunction hdlr)
 
 -------------------------------------------------------------------------------
 basicRoutes :: [(ByteString, AppHandler ())]
-basicRoutes = [ ("/", withRestAuth handleIndex)
+basicRoutes = [ ("/", withRestAuth tokenAuthentication handleIndex)
+              , ("/secret", withRestAuth alwaysFailAuthenticator handleIndex)
               , ("/register/:userid/", handleRegister)
               , ("/store", handleStore)
               , ("/static", serveDirectory "static")]
