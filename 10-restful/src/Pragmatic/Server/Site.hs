@@ -65,36 +65,50 @@ storeRecipe recipe = case parseRecipe recipe of
 routes :: [(ByteString, AppHandler ())]
 routes = basicRoutes
 
+
+
+-------------------------------------------------------------------------------
+-- Restful Authenticator, inspired to [Spray](http://spray.io/)
 type StatusCode = Int
+
 
 data AuthenticationRejection = AuthenticationRejection
     { rejectionCode :: StatusCode
     , rejectionMessage :: ByteString } deriving (Show)
 
 
-tokenAuthentication :: Handler b v a -> Either AuthenticationRejection (Handler b v a)
-tokenAuthentication hdlr = return hdlr
+-- Toy authenticator, just forward the handler over.
+alwaysPass :: Handler b v a -> Handler b v (Either AuthenticationRejection ())
+alwaysPass hdlr = return $ Right ()
+
+-- Token authenticator. For real world usage plug a db/cache lookup here.
+tokenAuthenticator :: Handler b v a -> Handler b v (Either AuthenticationRejection ())
+tokenAuthenticator hdlr = do
+  req <- getRequest
+  let token = getHeader "Authorisation" req
+  return (maybe rejection undefined token)
+  where
+    rejection = Left (AuthenticationRejection 500 "Invalid token.")
+    lookupFn t = if t == "SuperSecretToken" then Right hdlr else rejection
 
 
-alwaysFailAuthenticator :: Handler b v a -> Either AuthenticationRejection (Handler b v a)
-alwaysFailAuthenticator hdlr = Left (AuthenticationRejection 404 "You shall not pass!")
+alwaysFailAuthenticator :: Handler b v a -> Handler b v (Either AuthenticationRejection ())
+alwaysFailAuthenticator _ = return $ Left (AuthenticationRejection 404 "You shall not pass!")
 
 
--------------------------------------------------------------------------------
--- Restful Authenticator, inspired to [Spray](http://spray.io/)
-withRestAuth :: (Handler b v a -> Either AuthenticationRejection (Handler b v a))
+withRestAuth :: (Handler b v a -> Handler b v (Either AuthenticationRejection ()))
                 -> Handler b v a
                 -> Handler b v a
-withRestAuth authFunction hdlr = either
+withRestAuth authFunction hdlr = authFunction hdlr >>= \res -> either
     (\rej -> Extras.finishEarly (rejectionCode rej) (rejectionMessage rej))
-    id (authFunction hdlr)
+    (const hdlr) res
+
 
 -------------------------------------------------------------------------------
 basicRoutes :: [(ByteString, AppHandler ())]
-basicRoutes = [ ("/", withRestAuth tokenAuthentication handleIndex)
+basicRoutes = [ ("/", withRestAuth alwaysPass handleIndex)
               , ("/secret", withRestAuth alwaysFailAuthenticator handleIndex)
-              , ("/register/:userid/", handleRegister)
-              , ("/store", handleStore)
+              , ("/protected", withRestAuth tokenAuthenticator handleIndex)
               , ("/static", serveDirectory "static")]
 
 
