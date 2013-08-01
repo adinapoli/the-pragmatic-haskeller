@@ -85,11 +85,11 @@ alwaysPass hdlr = return $ Right ()
 tokenAuthenticator :: Handler b v a -> Handler b v (Either AuthenticationRejection ())
 tokenAuthenticator hdlr = do
   req <- getRequest
-  let token = getHeader "Authorisation" req
-  return (maybe rejection undefined token)
+  let token = getHeader "Authorization" req
+  return (maybe rejection lookupFn token)
   where
     rejection = Left (AuthenticationRejection 500 "Invalid token.")
-    lookupFn t = if t == "SuperSecretToken" then Right hdlr else rejection
+    lookupFn t = if t == "SuperSecretToken" then Right () else rejection
 
 
 alwaysFailAuthenticator :: Handler b v a -> Handler b v (Either AuthenticationRejection ())
