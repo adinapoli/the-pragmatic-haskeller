@@ -80,6 +80,14 @@ main = do
     cleanup
 
 
+-- | In my mind this should be the computation which shut down the
+-- actor system. Cleanup might help here?
+shutdownActorSystem :: IO ()
+shutdownActorSystem = do
+    print "Shutting down the actor system" 
+    return ()
+
+
 ------------------------------------------------------------------------------
 -- | This action loads the config used by this application. The loaded config
 -- is returned as the first element of the tuple produced by the loadSnapTH
